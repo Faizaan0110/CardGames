@@ -248,6 +248,7 @@ export function playCard(room, playerId, action) {
   room.playHistory.push({ playerId: player.id, playerName: player.name, value: cardValue });
 
   let resultMsg = `${player.name} played ${nameForValue(cardValue)}.`;
+  let baronReveal = null;
 
   switch (cardValue) {
     case 1: {
@@ -271,6 +272,7 @@ export function playCard(room, playerId, action) {
       if (target) {
         const pv = player.hand[0];
         const tv = target.hand[0];
+        baronReveal = { aId: player.id, aCard: pv, bId: target.id, bCard: tv };
         if (pv > tv) {
           resultMsg += ` Compared hands with ${target.name} — ${player.name} wins, ${target.name} is eliminated.`;
           eliminate(room, target, "lost Baron comparison");
@@ -295,7 +297,10 @@ export function playCard(room, playerId, action) {
       // Prince — `target` is always resolved by now (self or a valid other player)
       const chosen = target;
       const discarded = chosen.hand.pop();
-      if (discarded !== undefined) room.discard[chosen.id].push(discarded);
+      if (discarded !== undefined) {
+        room.discard[chosen.id].push(discarded);
+        room.playHistory.push({ playerId: chosen.id, playerName: chosen.name, value: discarded });
+      }
       resultMsg += ` ${chosen.name} discards their hand`;
       if (discarded === 8) {
         resultMsg += " — it was the Princess! Eliminated.";
@@ -344,6 +349,7 @@ export function playCard(room, playerId, action) {
     message: resultMsg,
     guard: cardValue === GUARD && target ? { targetId: target.id, guessValue } : null,
     priest: cardValue === 2 && target ? { targetId: target.id } : null,
+    baron: baronReveal,
   };
 }
 
@@ -351,7 +357,10 @@ function eliminate(room, player, reason) {
   if (!player.alive) return;
   player.alive = false;
   const remaining = player.hand.pop();
-  if (remaining !== undefined) room.discard[player.id].push(remaining);
+  if (remaining !== undefined) {
+    room.discard[player.id].push(remaining);
+    room.playHistory.push({ playerId: player.id, playerName: player.name, value: remaining });
+  }
   log(room, `${player.name} is eliminated (${reason}).`);
 }
 
@@ -471,7 +480,7 @@ export function getPublicState(room) {
     favorTarget: favorTarget(room.players.length),
     matchEnded: room.matchEnded,
     matchWinnerIds: room.matchWinnerIds,
-    playHistory: room.playHistory.slice(-8),
+    playHistory: room.playHistory.slice(-10),
     players: room.players.map((p) => ({
       id: p.id,
       name: p.name,

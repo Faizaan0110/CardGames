@@ -4,15 +4,15 @@ import Card from "./Card.jsx";
 import Avatar from "./Avatar.jsx";
 import CheatsheetPanel from "./CheatsheetPanel.jsx";
 import TopBar from "./TopBar.jsx";
-import Dropdown from "./Dropdown.jsx";
 import Icon from "./Icon.jsx";
 import { CARD_META } from "../cardData.js";
 
 const NEEDS_TARGET = new Set([1, 2, 3, 6]);
 const PRINCE = 5;
 const GUARD = 1;
+const GUESS_VALUES = [2, 3, 4, 5, 6, 7, 8];
 
-export default function GameTable({ myId, roomCode, state, hand, reveal, error, setError, onBack }) {
+export default function GameTable({ myId, roomCode, state, hand, reveal, onDismissReveal, error, setError, onBack }) {
   const [selectedCard, setSelectedCard] = useState(null);
   const [targetId, setTargetId] = useState(null);
   const [guessValue, setGuessValue] = useState(null);
@@ -35,15 +35,9 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, error, 
     });
   }, [needsTarget, selectedCard, state.players, myId]);
 
-  const targetOptions = validTargets.map((p) => ({
-    id: p.id,
-    label: p.id === myId ? `${p.name} (you)` : p.name,
-    avatar: <Avatar name={p.name} size={20} />,
-  }));
-
   // If there's only one legal target (e.g. Prince with everyone else protected,
   // so only yourself is left), just pick it automatically — there's no real
-  // choice to make, so don't force a dropdown click for it.
+  // choice to make, so don't force a click for it.
   useEffect(() => {
     if (needsTarget && targetId === null && validTargets.length === 1) {
       setTargetId(validTargets[0].id);
@@ -52,17 +46,11 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, error, 
 
   // Prince specifically: when every other player is protected, self-targeting
   // isn't a choice you make — it's the only legal outcome. Don't show a
-  // one-item "choose yourself" dropdown for that; say so instead. (The server
+  // one-button "choose yourself" row for that; say so instead. (The server
   // independently enforces this regardless of what targetId gets sent — this
   // is purely about not making the UI ask a question with only one answer.)
   const princeForcedSelf = selectedCard === PRINCE && validTargets.length === 1 && validTargets[0].id === myId;
   const noLegalTarget = needsTarget && selectedCard !== PRINCE && validTargets.length === 0;
-
-  const guessOptions = [2, 3, 4, 5, 6, 7, 8].map((v) => ({
-    id: v,
-    label: `${v} · ${CARD_META[v].name}`,
-    avatar: <img src={`/images/${CARD_META[v].image}`} alt="" className="dropdown-option-thumb" />,
-  }));
 
   function selectCard(value) {
     if (!isMyTurn || busy) return;
@@ -215,6 +203,8 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, error, 
             </div>
           )}
 
+          {/* Baron reveal now renders as a modal near the end of this component, not inline here */}
+
           {error && <p className="error floating">{error}</p>}
 
           <section className="my-area">
@@ -255,14 +245,37 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, error, 
                     {needsTarget && (
                       <div className="action-field">
                         <span className="action-field-label">Target</span>
-                        <Dropdown options={targetOptions} value={targetId} onChange={setTargetId} placeholder="Select a player" />
+                        <div className="choice-row">
+                          {validTargets.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              className={"choice-btn" + (targetId === p.id ? " active" : "")}
+                              onClick={() => setTargetId(p.id)}
+                            >
+                              <Avatar name={p.name} size={22} />
+                              {p.id === myId ? `${p.name} (you)` : p.name}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
                     {needsGuess && targetId && (
                       <div className="action-field">
                         <span className="action-field-label">Guess their card</span>
-                        <Dropdown options={guessOptions} value={guessValue} onChange={setGuessValue} placeholder="Select a card" />
+                        <div className="choice-row">
+                          {GUESS_VALUES.map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              className={"choice-btn" + (guessValue === v ? " active" : "")}
+                              onClick={() => setGuessValue(v)}
+                            >
+                              {v} · {CARD_META[v].name}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -311,6 +324,70 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, error, 
       </div>
 
       {showCheatsheet && <CheatsheetPanel onClose={() => setShowCheatsheet(false)} />}
+      {reveal && reveal.type === "baron" && <BaronRevealModal reveal={reveal} myId={myId} state={state} onClose={onDismissReveal} />}
+    </div>
+  );
+}
+
+// Shown only to the two players who played/were targeted by a Baron — the
+// server only ever sends this event to those two sockets, never the room.
+// Unlike Priest's quick-glance toast, this stays up until the viewer
+// dismisses it themselves — a duel result is worth actually reading.
+function BaronRevealModal({ reveal, myId, state, onClose }) {
+  const closeBtnRef = React.useRef(null);
+
+  useEffect(() => {
+    closeBtnRef.current?.focus();
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const isA = reveal.aId === myId;
+  const myCard = isA ? reveal.aCard : reveal.bCard;
+  const theirCard = isA ? reveal.bCard : reveal.aCard;
+  const theirName = nameFor(state, isA ? reveal.bId : reveal.aId);
+  const tie = myCard === theirCard;
+  const won = myCard > theirCard;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-panel baron-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="baron-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="baron-modal-title" className="baron-modal-title">
+          Baron Duel
+        </h2>
+
+        <div className="baron-duel">
+          <div className="baron-duel-side">
+            <Card value={myCard} size="lg" />
+            <span className="baron-duel-name">You</span>
+          </div>
+          <span className="baron-duel-vs">VS</span>
+          <div className="baron-duel-side">
+            <Card value={theirCard} size="lg" />
+            <span className="baron-duel-name">{theirName}</span>
+          </div>
+        </div>
+
+        <p className={"baron-duel-outcome" + (tie ? " tie" : won ? " win" : " lose")}>
+          {tie ? "A tie — no effect." : won ? `You win — ${theirName} is eliminated.` : "You lose — you are eliminated."}
+        </p>
+
+        <button className="btn primary" onClick={onClose} ref={closeBtnRef}>
+          OK
+        </button>
+      </div>
     </div>
   );
 }

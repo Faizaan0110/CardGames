@@ -34,7 +34,12 @@ export default function App() {
     }
     function onReveal(info) {
       setReveal(info);
-      setTimeout(() => setReveal(null), 6000);
+      // Priest is a quick glance, fine to auto-clear. Baron is a duel result
+      // the player should be able to actually read - it clears when they
+      // dismiss it themselves (see GameTable's reveal modal).
+      if (info.type !== "baron") {
+        setTimeout(() => setReveal(null), 6000);
+      }
     }
 
     async function tryResume() {
@@ -134,6 +139,7 @@ export default function App() {
       state={publicState}
       hand={myHand}
       reveal={reveal}
+      onDismissReveal={() => setReveal(null)}
       error={error}
       setError={setError}
       onBack={handleLeave}

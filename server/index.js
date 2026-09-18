@@ -148,6 +148,15 @@ io.on("connection", (socket) => {
         });
       }
 
+      // Baron reveal — both cards, but only to the two people who played it.
+      // The rest of the room only ever learns the outcome via the log/discard
+      // pile (and only the loser's card becomes public through that anyway).
+      if (result.baron) {
+        const payload = { type: "baron", ...result.baron };
+        io.to(result.baron.aId).emit("reveal", payload);
+        io.to(result.baron.bId).emit("reveal", payload);
+      }
+
       afterPlayResolve(room);
       cb({ ok: true });
       broadcastState(room.code);

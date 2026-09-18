@@ -1036,8 +1036,8 @@ a {
 
 .discard-rail-cards {
   display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 4px 12px 8px;
 }
 
@@ -1070,13 +1070,8 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-left: -22px;
   transition: transform 160ms ease, z-index 0s;
   position: relative;
-}
-
-.discard-item:first-child {
-  margin-left: 0;
 }
 
 .discard-item:hover {
@@ -1255,13 +1250,46 @@ a {
   color: var(--text-dim);
 }
 
-.action-field .dropdown-trigger {
-  width: 200px;
+.action-field .choice-row {
+  max-width: 420px;
 }
 
 .play-card-btn {
   min-width: 140px;
   justify-content: center;
+}
+
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.choice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 13, 14, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.choice-btn:hover {
+  border-color: var(--gold);
+  transform: translateY(-1px);
+}
+
+.choice-btn.active {
+  background: var(--accent);
+  border-color: var(--gold);
+  color: white;
+  font-weight: 600;
 }
 
 @media (max-width: 480px) {
@@ -1274,8 +1302,8 @@ a {
     align-items: stretch;
     width: 100%;
   }
-  .action-field .dropdown-trigger {
-    width: 100%;
+  .choice-row {
+    justify-content: flex-start;
   }
   .play-card-btn {
     width: 100%;
@@ -1303,105 +1331,68 @@ a {
   transform: translateY(-1px);
 }
 
-/* ---- Dropdown ---- */
+/* ---- Baron duel modal ---- */
 
-.dropdown {
-  position: relative;
+.baron-modal {
+  max-width: 420px;
+  text-align: center;
 }
 
-.dropdown-trigger {
+.baron-modal-title {
+  font-size: 20px;
+  margin: 0 0 18px;
+}
+
+.baron-duel {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.baron-duel-side {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  height: 45px;
-  background: rgba(20, 13, 14, 0.85);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0 12px;
-  color: var(--text);
+}
+
+.baron-duel-name {
   font-size: 13px;
-  cursor: pointer;
-  min-width: 160px;
-  transition: border-color 160ms ease;
-}
-
-.dropdown-trigger:hover {
-  border-color: var(--gold);
-}
-
-.dropdown-trigger.open {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.25);
-}
-
-.dropdown-selected {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.dropdown-placeholder {
-  color: var(--text-dim);
-  flex: 1;
-  text-align: left;
-}
-
-.dropdown-list {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  min-width: 100%;
-  background: rgba(20, 13, 14, 0.97);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 5px;
-  z-index: 10;
-  max-height: 240px;
-  overflow-y: auto;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-}
-
-.dropdown-option {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  background: none;
-  border: none;
-  color: var(--text);
-  font-size: 13px;
-  padding: 9px 10px;
-  border-radius: 7px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 140ms ease;
-}
-
-.dropdown-option:hover {
-  background: var(--bg-elev-2);
-}
-
-.dropdown-option.active {
-  background: var(--accent-soft);
-}
-
-.dropdown-empty {
-  padding: 8px 10px;
-  font-size: 13px;
+  font-weight: 600;
   color: var(--text-dim);
 }
 
-.dropdown-option-thumb {
-  width: 22px;
-  height: 30px;
-  object-fit: cover;
-  border-radius: 3px;
+.baron-duel-vs {
+  font-family: "Fraunces", serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gold);
   flex-shrink: 0;
+}
+
+.baron-duel-outcome {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 18px;
+}
+
+.baron-duel-outcome.win {
+  color: #6fcf7c;
+}
+
+.baron-duel-outcome.lose {
+  color: var(--accent-bright);
+}
+
+.baron-duel-outcome.tie {
+  color: var(--text-dim);
+}
+
+.baron-modal .btn {
+  width: 100%;
+  justify-content: center;
 }
 
 /* ---- Modal ---- */
@@ -1660,6 +1651,9 @@ a {
   }
   .table-center {
     flex-direction: column;
+  }
+  .card-thumb {
+    width: 64px;
   }
   .game-layout {
     flex-direction: column;
