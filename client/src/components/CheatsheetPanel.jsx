@@ -1,45 +1,11 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import Card from "./Card.jsx";
 import Icon from "./Icon.jsx";
 import { CARD_META } from "../cardData.js";
+import { useModalA11y } from "../useModalA11y.js";
 
 export default function CheatsheetPanel({ onClose }) {
-  const panelRef = useRef(null);
-  const closeBtnRef = useRef(null);
-  const previouslyFocused = useRef(document.activeElement);
-
-  useEffect(() => {
-    closeBtnRef.current?.focus();
-
-    function onKeyDown(e) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key === "Tab") {
-        const focusables = panelRef.current?.querySelectorAll(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (!focusables || focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      previouslyFocused.current?.focus?.();
-    };
-  }, [onClose]);
+  const { panelRef, closeBtnRef } = useModalA11y(onClose);
 
   return (
     <div className="modal-overlay" onClick={onClose}>

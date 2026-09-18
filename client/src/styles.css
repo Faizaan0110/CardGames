@@ -1156,31 +1156,6 @@ a {
   padding: 4px 12px 8px;
 }
 
-.removed-stack {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding-left: 16px;
-  border-left: 1px solid var(--border);
-}
-
-.removed-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
-}
-
-.removed-cards {
-  display: flex;
-  gap: 6px;
-}
-
-.removed-cards .card-thumb {
-  width: 52px;
-}
-
 .discard-item {
   display: flex;
   flex-direction: column;
@@ -1610,6 +1585,38 @@ a {
   max-width: 900px;
 }
 
+.rules-modal {
+  max-width: 480px;
+}
+
+.rules-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.rules-sections h3 {
+  font-size: 14px;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+
+.rules-sections p {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.lobby-rules-link {
+  display: block;
+  text-align: center;
+  margin-top: 14px;
+  font-size: 13px;
+}
+
 .cheatsheet-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1662,12 +1669,6 @@ a {
   .table-center {
     flex-direction: column;
     gap: 16px;
-  }
-  .removed-stack {
-    padding-left: 0;
-    padding-top: 12px;
-    border-left: none;
-    border-top: 1px solid var(--border);
   }
 }
 

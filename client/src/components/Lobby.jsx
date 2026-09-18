@@ -4,11 +4,13 @@ import { saveAvatar } from "../session.js";
 import TopBar from "./TopBar.jsx";
 import Avatar from "./Avatar.jsx";
 import AvatarPicker from "./AvatarPicker.jsx";
+import GameRulesPanel from "./GameRulesPanel.jsx";
 import Icon from "./Icon.jsx";
 
 export default function Lobby({ myId, roomCode, state, error, setError, onBack }) {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const isHost = state.hostId === myId;
   const canStart = state.players.length >= 2 && state.players.length <= 4;
   const emptySeats = Math.max(0, 4 - state.players.length);
@@ -150,8 +152,14 @@ export default function Lobby({ myId, roomCode, state, error, setError, onBack }
               <Icon name="users" size={12} /> Need 2–4 players to start.
             </p>
           )}
+
+          <button className="link-btn lobby-rules-link" onClick={() => setShowRules(true)}>
+            How to play
+          </button>
         </div>
       </div>
+
+      {showRules && <GameRulesPanel onClose={() => setShowRules(false)} />}
     </div>
   );
 }

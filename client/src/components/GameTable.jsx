@@ -3,6 +3,7 @@ import { emitAsync } from "../socket.js";
 import Card from "./Card.jsx";
 import Avatar from "./Avatar.jsx";
 import CheatsheetPanel from "./CheatsheetPanel.jsx";
+import GameRulesPanel from "./GameRulesPanel.jsx";
 import TopBar from "./TopBar.jsx";
 import Icon from "./Icon.jsx";
 import { CARD_META } from "../cardData.js";
@@ -18,6 +19,7 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
   const [guessValue, setGuessValue] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [logExpanded, setLogExpanded] = useState(false);
 
   const isMyTurn = state.turnPlayerId === myId && !state.ended;
@@ -190,7 +192,15 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
             <div className="discard-rail">
               <span className="discard-rail-label">Discarded</span>
               <div className="discard-rail-cards">
-                {state.playHistory.length === 0 && <span className="hint">No cards played yet.</span>}
+                {state.faceUpRemoved.length === 0 && state.playHistory.length === 0 && (
+                  <span className="hint">No cards played yet.</span>
+                )}
+                {state.faceUpRemoved.map((v, i) => (
+                  <div key={"removed-" + i} className="discard-item">
+                    <Card value={v} size="thumb" />
+                    <span className="discard-item-name">Removed</span>
+                  </div>
+                ))}
                 {state.playHistory.map((h, i) => (
                   <div key={i} className="discard-item">
                     <Card value={h.value} size="thumb" />
@@ -199,16 +209,6 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
                 ))}
               </div>
             </div>
-            {state.faceUpRemoved.length > 0 && (
-              <div className="removed-stack">
-                <span className="removed-label">Removed</span>
-                <div className="removed-cards">
-                  {state.faceUpRemoved.map((v, i) => (
-                    <Card key={i} value={v} size="thumb" />
-                  ))}
-                </div>
-              </div>
-            )}
           </section>
 
           {reveal && reveal.type === "priest" && (
@@ -227,7 +227,17 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
                 <Icon name="crown" size={13} /> Your turn — choose a card to play
               </p>
             ) : !state.ended ? (
-              <p className="turn-banner dim">Waiting for {nameFor(state, state.turnPlayerId)}…</p>
+              (() => {
+                const turnPlayer = state.players.find((p) => p.id === state.turnPlayerId);
+                if (turnPlayer && !turnPlayer.connected) {
+                  return (
+                    <p className="turn-banner dim">
+                      Waiting for {turnPlayer.name} to reconnect…{isHost ? " You can remove them if they don't come back." : ""}
+                    </p>
+                  );
+                }
+                return <p className="turn-banner dim">Waiting for {nameFor(state, state.turnPlayerId)}…</p>;
+              })()
             ) : null}
 
             <div className="my-hand">
@@ -331,12 +341,17 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
             </ul>
           </div>
 
+          <button className="cheatsheet-trigger" onClick={() => setShowRules(true)}>
+            <Icon name="users" size={14} /> How to Play
+          </button>
+
           <button className="cheatsheet-trigger" onClick={() => setShowCheatsheet(true)}>
             <Icon name="book" size={14} /> View Cheatsheet
           </button>
         </aside>
       </div>
 
+      {showRules && <GameRulesPanel onClose={() => setShowRules(false)} />}
       {showCheatsheet && <CheatsheetPanel onClose={() => setShowCheatsheet(false)} />}
       {reveal && reveal.type === "baron" && <BaronRevealModal reveal={reveal} myId={myId} state={state} onClose={onDismissReveal} />}
     </div>

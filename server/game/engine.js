@@ -93,11 +93,10 @@ export function setAvatar(room, playerId, avatarUrl) {
 }
 
 // Handles what happens when a socket disconnects: marking them away and
-// transferring host ownership if needed. Does NOT eliminate them, even if
-// it was their turn — they might reconnect. If it was their turn, that turn
-// is simply skipped (advanceTurn already knows to pass over anyone who's
-// disconnected); only an explicit host kick or the player's own "leave"
-// actually removes someone from the round.
+// transferring host ownership if needed. Does NOT eliminate them and does
+// NOT hand their turn to anyone else — if it's their turn (or becomes their
+// turn later), the game simply waits for them. Only an explicit host kick
+// or the player's own "leave" actually removes someone from the round.
 export function handleDisconnect(room, playerId) {
   const player = room.players.find((p) => p.id === playerId);
   if (!player) return;
@@ -110,10 +109,9 @@ export function handleDisconnect(room, playerId) {
       log(room, `${nextHost.name} is now the host.`);
     }
   }
-
-  if (room.started && !room.ended && player.alive && currentPlayer(room)?.id === playerId) {
-    advanceTurn(room);
-  }
+  // No turn change here — if it's currently their turn, their hand is
+  // untouched and waiting; if it becomes their turn later, advanceTurn
+  // (below) will land on them and simply not start it until they're back.
 }
 
 // Fully removes a player — used for both an explicit "leave" and a host
@@ -177,6 +175,14 @@ export function reconnectPlayer(room, token, newSocketId) {
   const oldId = player.id;
   player.id = newSocketId;
   player.connected = true;
+
+  // If the game paused on this exact player's turn while they were away
+  // (their hand is still at the resting size of 1, meaning they never got
+  // to draw), pick it back up now that they're here.
+  if (room.started && !room.ended && player.alive && room.players[room.turnIndex] === player && player.hand.length === 1) {
+    drawForTurn(room);
+  }
+
   if (oldId === newSocketId) return player;
 
   if (oldId in room.discard) {
@@ -521,25 +527,25 @@ function checkRoundEndOnly(room) {
   }
 }
 
-// Finds the next player who can actually take a turn. Someone who's alive
-// but disconnected just has their turn skipped, not eliminated — they keep
-// their seat/hand in case they reconnect. If every remaining alive player
-// happens to be disconnected at once, play simply pauses at whichever slot
-// the search lands on until someone reconnects or the host removes them.
+// Moves to the next alive player in turn order — eliminated players are the
+// only ones ever passed over. If that player is connected, their turn
+// starts normally (draw a card). If they're away, the turn simply waits on
+// them: turnIndex points at them, but nothing is drawn and no one else can
+// act, until they reconnect (see reconnectPlayer) or the host removes them
+// (see removePlayerFully, which re-runs this once they're gone).
 function advanceTurn(room) {
   let next = room.turnIndex;
   for (let i = 0; i < room.players.length; i++) {
     next = (next + 1) % room.players.length;
-    const candidate = room.players[next];
-    if (!candidate.alive) continue;
-    if (!candidate.connected) continue; // away, not eliminated - just skip their turn
-
-    room.turnIndex = next;
-    drawForTurn(room);
-    return;
+    if (room.players[next].alive) break;
   }
-  // Nobody alive is currently connected — pause here rather than loop forever.
   room.turnIndex = next;
+  const player = room.players[next];
+  if (player.connected) {
+    drawForTurn(room);
+  } else {
+    log(room, `Waiting for ${player.name} to reconnect…`);
+  }
 }
 
 export function getPublicState(room) {
