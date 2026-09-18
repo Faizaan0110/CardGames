@@ -1,15 +1,37 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import Icon from "./Icon.jsx";
 
-export default function TopBar({ variant = "full", onNavigate, onBack, roomCode, playerName }) {
+export default function TopBar({ variant = "full", onNavigate, onBack, roomCode, playerName, avatarUrl }) {
   const [copied, setCopied] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   function copyRoomCode() {
     navigator.clipboard?.writeText(roomCode).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     });
+  }
+
+  function handleLeaveClick() {
+    setMenuOpen(false);
+    onBack();
   }
 
   if (variant === "slim") {
@@ -32,11 +54,25 @@ export default function TopBar({ variant = "full", onNavigate, onBack, roomCode,
         </nav>
         <div className="topbar-right">
           {playerName && (
-            <button className="player-chip-nav" onClick={onBack}>
-              <Avatar name={playerName} size={30} />
-              <span>{playerName}</span>
-              <Icon name="chevron-down" size={13} />
-            </button>
+            <div className="player-chip-menu" ref={menuRef}>
+              <button
+                className="player-chip-nav"
+                onClick={() => setMenuOpen((o) => !o)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+              >
+                <Avatar name={playerName} avatarUrl={avatarUrl} size={30} />
+                <span>{playerName}</span>
+                <Icon name="chevron-down" size={13} className={menuOpen ? "log-chevron open" : "log-chevron"} />
+              </button>
+              {menuOpen && (
+                <div className="player-chip-dropdown" role="menu">
+                  <button className="player-chip-dropdown-item" role="menuitem" onClick={handleLeaveClick}>
+                    <Icon name="close" size={12} /> Leave room
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           {!playerName && roomCode && (
             <>

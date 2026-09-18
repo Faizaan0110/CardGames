@@ -703,6 +703,7 @@ a {
 }
 
 .seat {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
@@ -715,6 +716,28 @@ a {
 
 .seat.filled {
   background: var(--bg-elev-2);
+}
+
+.seat-kick-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  border: none;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.seat-kick-btn:hover {
+  background: var(--accent);
+  color: white;
 }
 
 .seat.seat-host {
@@ -791,6 +814,44 @@ a {
   border: 2px solid var(--gold);
 }
 
+.avatar-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto 14px;
+}
+
+.avatar-picker-preview {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: opacity 140ms ease;
+}
+
+.avatar-picker-preview:hover {
+  opacity: 0.85;
+}
+
+.avatar-picker-actions {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.avatar-picker-error {
+  font-size: 11px;
+  padding: 4px 8px;
+  max-width: 220px;
+  text-align: center;
+}
+
+.player-chip-menu {
+  position: relative;
+}
+
 .player-chip-nav {
   display: flex;
   align-items: center;
@@ -804,6 +865,40 @@ a {
   color: var(--text);
   cursor: pointer;
   font-family: inherit;
+}
+
+.player-chip-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 160px;
+  background: rgba(20, 13, 14, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px;
+  z-index: 20;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.player-chip-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 140ms ease;
+}
+
+.player-chip-dropdown-item:hover {
+  background: var(--accent-soft);
 }
 
 .chevron-down {
@@ -896,6 +991,26 @@ a {
 .player-chip.active-turn {
   border-color: var(--gold);
   box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.35);
+}
+
+.chip-kick-btn {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.chip-kick-btn:hover {
+  background: var(--accent);
+  color: white;
 }
 
 .player-chip.eliminated {
@@ -1523,6 +1638,10 @@ a {
   border: 1px solid var(--gold);
 }
 
+.cheatsheet-card-name-mobile {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .cheatsheet-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -1553,8 +1672,42 @@ a {
 }
 
 @media (max-width: 480px) {
+  .cheatsheet-modal {
+    max-height: 90vh;
+  }
   .cheatsheet-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 62vh;
+    overflow-y: auto;
+  }
+  .cheatsheet-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+  }
+  .cheatsheet-card .card-lg {
+    width: 34px;
+    flex-shrink: 0;
+  }
+  .cheatsheet-card-name-mobile {
+    display: block;
+    flex: 1;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .cheatsheet-card-count {
+    position: static;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
   }
 }
 

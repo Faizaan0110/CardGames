@@ -9,10 +9,21 @@ function hashName(name) {
   return h;
 }
 
-export default function Avatar({ name, size = 40, ring = false }) {
+export default function Avatar({ name, size = 40, ring = false, avatarUrl = null }) {
   const [imgFailed, setImgFailed] = useState(false);
   const safeName = (name || "?").trim();
   const hash = hashName(safeName);
+
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        className={"avatar avatar-img" + (ring ? " avatar-ring" : "")}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
 
   if (!imgFailed) {
     const avatarName = AVATAR_NAMES[hash % AVATAR_NAMES.length];

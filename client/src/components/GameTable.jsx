@@ -98,6 +98,15 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
     }
   }
 
+  async function handleKick(targetId, targetName) {
+    if (!window.confirm(`Remove ${targetName} from the game?`)) return;
+    try {
+      await emitAsync("kick_player", { targetId });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   const visibleLog = logExpanded ? state.log.slice(-14) : state.log.slice(-3);
   const selectedMeta = selectedCard !== null ? CARD_META[selectedCard] : null;
 
@@ -125,7 +134,7 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
                     <Icon name="crown" size={13} />
                   </span>
                 )}
-                <Avatar name={p.name} size={30} />
+                <Avatar name={p.name} avatarUrl={p.avatarUrl} size={30} />
                 <span className="player-chip-name">{p.id === myId ? "You" : p.name}</span>
                 <span className="tokens-pill">
                   <Icon name="heart" size={11} /> {p.tokens || 0}
@@ -137,6 +146,11 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
                 )}
                 {!p.alive && <span className="badge muted">Out</span>}
                 {!p.connected && <span className="badge muted">Away</span>}
+                {isHost && p.id !== myId && (
+                  <button className="chip-kick-btn" onClick={() => handleKick(p.id, p.name)} aria-label={`Remove ${p.name}`}>
+                    <Icon name="close" size={10} />
+                  </button>
+                )}
               </div>
             ))}
           </section>
@@ -253,7 +267,7 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
                               className={"choice-btn" + (targetId === p.id ? " active" : "")}
                               onClick={() => setTargetId(p.id)}
                             >
-                              <Avatar name={p.name} size={22} />
+                              <Avatar name={p.name} avatarUrl={p.avatarUrl} size={22} />
                               {p.id === myId ? `${p.name} (you)` : p.name}
                             </button>
                           ))}

@@ -54,22 +54,57 @@ export function addPlayer(room, id, name) {
     throw new Error("That name is already taken in this room");
   }
   const sessionToken = nanoid(SESSION_TOKEN_LENGTH);
-  room.players.push({ id, sessionToken, name: trimmed, hand: [], alive: true, protected: false, connected: true });
+  room.players.push({
+    id,
+    sessionToken,
+    name: trimmed,
+    hand: [],
+    alive: true,
+    protected: false,
+    connected: true,
+    avatarUrl: null,
+  });
   if (!(id in room.tokens)) room.tokens[id] = 0;
 }
 
-// Handles everything that needs to happen when a socket disconnects:
-// marking them away, transferring host ownership if needed, dropping them
-// from a not-yet-started lobby, and — if it's currently their turn in an
-// active round — forfeiting that turn so the game can't get permanently
-// stuck waiting for a connection that isn't coming back.
+// A custom profile picture, sent as a small resized data URL (the client
+// crops/resizes it before sending — this just double-checks server-side
+// rather than trusting that happened). Lightweight and in-memory like
+// everything else here: no file storage, dies with the room. `avatarUrl`
+// of null/"" clears back to the default deterministic avatar.
+const MAX_AVATAR_DATA_URL_LENGTH = 120_000; // generous for a small square JPEG, not for a dumped multi-MB photo
+
+export function setAvatar(room, playerId, avatarUrl) {
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) throw new Error("Not in this room");
+
+  if (avatarUrl === null || avatarUrl === undefined || avatarUrl === "") {
+    player.avatarUrl = null;
+    return player;
+  }
+  if (typeof avatarUrl !== "string" || !avatarUrl.startsWith("data:image/")) {
+    throw new Error("That doesn't look like a valid image.");
+  }
+  if (avatarUrl.length > MAX_AVATAR_DATA_URL_LENGTH) {
+    throw new Error("Image is too large — try a smaller photo.");
+  }
+  player.avatarUrl = avatarUrl;
+  return player;
+}
+
+// Handles what happens when a socket disconnects: marking them away and
+// transferring host ownership if needed. Does NOT eliminate them, even if
+// it was their turn — they might reconnect. If it was their turn, that turn
+// is simply skipped (advanceTurn already knows to pass over anyone who's
+// disconnected); only an explicit host kick or the player's own "leave"
+// actually removes someone from the round.
 export function handleDisconnect(room, playerId) {
   const player = room.players.find((p) => p.id === playerId);
   if (!player) return;
   player.connected = false;
 
   if (room.hostId === playerId) {
-    const nextHost = room.players.find((p) => p.connected);
+    const nextHost = room.players.find((p) => p.connected && !p.removed);
     if (nextHost) {
       room.hostId = nextHost.id;
       log(room, `${nextHost.name} is now the host.`);
@@ -77,8 +112,54 @@ export function handleDisconnect(room, playerId) {
   }
 
   if (room.started && !room.ended && player.alive && currentPlayer(room)?.id === playerId) {
-    eliminate(room, player, "disconnected");
-    afterPlayResolve(room);
+    advanceTurn(room);
+  }
+}
+
+// Fully removes a player — used for both an explicit "leave" and a host
+// kick. Unlike a disconnect, this is permanent: their session token is
+// cleared so they can never resume this seat again, and (mid-game) they're
+// eliminated from the round outright rather than just skipped. Before the
+// game has started, they're safe to actually splice out of the players
+// array (no turn order exists yet to corrupt); mid-game, they're marked
+// `removed` instead and filtered out of public state — actually removing
+// an array entry mid-round would desync `turnIndex`. The `removed` marker
+// gets swept for real the next time a round starts (see startGame).
+export function removePlayerFully(room, playerId, { requireHostId = null, reason = "left the room" } = {}) {
+  if (requireHostId !== null && room.hostId !== requireHostId) {
+    throw new Error("Only the host can remove players");
+  }
+  if (requireHostId !== null && requireHostId === playerId) {
+    throw new Error("You can't remove yourself");
+  }
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) throw new Error("Player not found");
+
+  const wasHost = room.hostId === playerId;
+  player.sessionToken = null;
+
+  if (!room.started) {
+    room.players = room.players.filter((p) => p.id !== playerId);
+  } else {
+    player.connected = false;
+    player.removed = true;
+    if (player.alive) {
+      const wasCurrentTurn = !room.ended && currentPlayer(room)?.id === playerId;
+      eliminate(room, player, reason);
+      if (wasCurrentTurn) {
+        afterPlayResolve(room);
+      } else {
+        checkRoundEndOnly(room);
+      }
+    }
+  }
+
+  if (wasHost) {
+    const nextHost = room.players.find((p) => p.connected && !p.removed);
+    if (nextHost) {
+      room.hostId = nextHost.id;
+      log(room, `${nextHost.name} is now the host.`);
+    }
   }
 }
 
@@ -122,6 +203,7 @@ function log(room, msg) {
 }
 
 export function startGame(room) {
+  room.players = room.players.filter((p) => !p.removed);
   if (room.players.length < MIN_PLAYERS) throw new Error("Need at least 2 players");
   if (room.started) throw new Error("Already started");
 
@@ -428,41 +510,36 @@ export function afterPlayResolve(room) {
   advanceTurn(room);
 }
 
-// Finds the next player who can actually take a turn. If it lands on someone
-// who's alive but disconnected, they forfeit (are eliminated) on the spot —
-// this is what stops a vanished player from permanently blocking the game
-// once the turn order reaches them, even if they weren't the one who
-// disconnected mid-turn originally.
+function checkRoundEndOnly(room) {
+  if (room.ended) return;
+  const alive = alivePlayers(room);
+  if (alive.length === 1) {
+    finishRound(room, alive, "only one player remains");
+  } else if (alive.length === 0) {
+    room.ended = true;
+    log(room, "Round ended — no players remaining.");
+  }
+}
+
+// Finds the next player who can actually take a turn. Someone who's alive
+// but disconnected just has their turn skipped, not eliminated — they keep
+// their seat/hand in case they reconnect. If every remaining alive player
+// happens to be disconnected at once, play simply pauses at whichever slot
+// the search lands on until someone reconnects or the host removes them.
 function advanceTurn(room) {
   let next = room.turnIndex;
   for (let i = 0; i < room.players.length; i++) {
     next = (next + 1) % room.players.length;
     const candidate = room.players[next];
     if (!candidate.alive) continue;
-
-    if (!candidate.connected) {
-      eliminate(room, candidate, "disconnected");
-      const alive = alivePlayers(room);
-      if (alive.length === 1) {
-        finishRound(room, alive, "only one player remains");
-        return;
-      }
-      if (alive.length === 0) {
-        room.ended = true;
-        log(room, "Round ended — no players remaining.");
-        return;
-      }
-      continue;
-    }
+    if (!candidate.connected) continue; // away, not eliminated - just skip their turn
 
     room.turnIndex = next;
     drawForTurn(room);
     return;
   }
-  // Defensive fallback — shouldn't be reachable given the checks above, but
-  // never leave the room silently stuck if it somehow is.
-  room.ended = true;
-  log(room, "Round ended — no players available to take a turn.");
+  // Nobody alive is currently connected — pause here rather than loop forever.
+  room.turnIndex = next;
 }
 
 export function getPublicState(room) {
@@ -481,16 +558,19 @@ export function getPublicState(room) {
     matchEnded: room.matchEnded,
     matchWinnerIds: room.matchWinnerIds,
     playHistory: room.playHistory.slice(-10),
-    players: room.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      alive: p.alive,
-      protected: p.protected,
-      connected: p.connected,
-      handCount: p.hand.length,
-      discard: room.discard[p.id] || [],
-      tokens: room.tokens[p.id] || 0,
-    })),
+    players: room.players
+      .filter((p) => !p.removed)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        alive: p.alive,
+        protected: p.protected,
+        connected: p.connected,
+        handCount: p.hand.length,
+        discard: room.discard[p.id] || [],
+        tokens: room.tokens[p.id] || 0,
+        avatarUrl: p.avatarUrl || null,
+      })),
   };
 }
 

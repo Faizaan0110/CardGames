@@ -95,7 +95,12 @@ export default function App() {
     setError(null);
   }
 
-  function handleLeave() {
+  async function handleLeave() {
+    try {
+      await emitAsync("leave_room", {});
+    } catch {
+      // Even if this fails (e.g. connection already dropped), still leave locally.
+    }
     clearSavedSession();
     socket.disconnect();
     socket.connect();

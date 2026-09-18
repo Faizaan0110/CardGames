@@ -1,12 +1,15 @@
 import React, { useState } from "react";
 import { emitAsync } from "../socket.js";
+import { getSavedName, saveName, getSavedAvatar, saveAvatar } from "../session.js";
 import TopBar from "./TopBar.jsx";
 import Icon from "./Icon.jsx";
+import AvatarPicker from "./AvatarPicker.jsx";
 
 export default function JoinScreen({ onJoined, onBack, initialMode = "create", initialCode = "" }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => getSavedName());
   const [code, setCode] = useState(initialCode);
   const [mode, setMode] = useState(initialMode);
+  const [avatarUrl, setAvatarUrl] = useState(() => getSavedAvatar());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -19,14 +22,25 @@ export default function JoinScreen({ onJoined, onBack, initialMode = "create", i
     setBusy(true);
     setError(null);
     try {
+      let res;
       if (mode === "create") {
-        const res = await emitAsync("create_room", { name });
-        onJoined(res.code, res.sessionToken);
+        res = await emitAsync("create_room", { name });
       } else {
         if (!code.trim()) throw new Error("Enter a room code.");
-        const res = await emitAsync("join_room", { name, code: code.trim().toUpperCase() });
-        onJoined(res.code, res.sessionToken);
+        res = await emitAsync("join_room", { name, code: code.trim().toUpperCase() });
       }
+      saveName(name);
+      if (avatarUrl) {
+        // Best-effort - if this fails for some reason, still let them into
+        // the room rather than blocking on their photo.
+        try {
+          await emitAsync("set_avatar", { avatarUrl });
+          saveAvatar(avatarUrl);
+        } catch {
+          // ignore - they can set it again from the lobby
+        }
+      }
+      onJoined(res.code, res.sessionToken);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -64,6 +78,8 @@ export default function JoinScreen({ onJoined, onBack, initialMode = "create", i
           <img src="/images/logo.png" alt="" className="panel-card-icon" />
           <h1 className="title serif-title">Love Letter</h1>
           <p className="subtitle center-text">A game of risk, deduction, and one lucky letter.</p>
+
+          <AvatarPicker name={name || "?"} avatarUrl={avatarUrl} onChange={setAvatarUrl} />
 
           <div className="tabs">
             <button className={mode === "create" ? "tab active" : "tab"} onClick={() => setMode("create")}>

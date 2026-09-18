@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { emitAsync } from "../socket.js";
+import { saveAvatar } from "../session.js";
 import TopBar from "./TopBar.jsx";
 import Avatar from "./Avatar.jsx";
+import AvatarPicker from "./AvatarPicker.jsx";
 import Icon from "./Icon.jsx";
 
 export default function Lobby({ myId, roomCode, state, error, setError, onBack }) {
@@ -24,6 +26,24 @@ export default function Lobby({ myId, roomCode, state, error, setError, onBack }
     }
   }
 
+  async function handleAvatarChange(avatarUrl) {
+    try {
+      await emitAsync("set_avatar", { avatarUrl });
+      saveAvatar(avatarUrl);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleKick(targetId, targetName) {
+    if (!window.confirm(`Remove ${targetName} from the room?`)) return;
+    try {
+      await emitAsync("kick_player", { targetId });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   function handleCopy() {
     navigator.clipboard?.writeText(roomCode).then(() => {
       setCopied(true);
@@ -33,7 +53,7 @@ export default function Lobby({ myId, roomCode, state, error, setError, onBack }
 
   return (
     <div className="lobby-screen" style={{ backgroundImage: "url(/images/backgrounds/love-letter-lobby.jpg)" }}>
-      <TopBar variant="slim" playerName={me?.name} onBack={onBack} />
+      <TopBar variant="slim" playerName={me?.name} avatarUrl={me?.avatarUrl} onBack={onBack} />
 
       <span className="join-side-text left">
         Same
@@ -76,7 +96,16 @@ export default function Lobby({ myId, roomCode, state, error, setError, onBack }
           <div className="seat-grid">
             {state.players.map((p) => (
               <div key={p.id} className={"seat filled" + (p.id === state.hostId ? " seat-host" : "")}>
-                <Avatar name={p.name} size={52} ring />
+                {isHost && p.id !== myId && (
+                  <button className="seat-kick-btn" onClick={() => handleKick(p.id, p.name)} aria-label={`Remove ${p.name}`}>
+                    <Icon name="close" size={10} />
+                  </button>
+                )}
+                {p.id === myId ? (
+                  <AvatarPicker name={p.name} avatarUrl={p.avatarUrl} onChange={handleAvatarChange} size={52} />
+                ) : (
+                  <Avatar name={p.name} avatarUrl={p.avatarUrl} size={52} ring />
+                )}
                 <span className="seat-name">{p.name}</span>
                 <span className={"seat-status" + (p.id === state.hostId ? " host" : "")}>
                   {p.id === state.hostId ? (
@@ -86,7 +115,7 @@ export default function Lobby({ myId, roomCode, state, error, setError, onBack }
                   ) : p.connected ? (
                     "Ready"
                   ) : (
-                    "Disconnected"
+                    "Away"
                   )}
                 </span>
               </div>

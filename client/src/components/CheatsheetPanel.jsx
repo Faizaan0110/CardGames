@@ -64,6 +64,7 @@ export default function CheatsheetPanel({ onClose }) {
             <div key={value} className="cheatsheet-card">
               <span className="cheatsheet-card-count">×{meta.count}</span>
               <Card value={Number(value)} size="lg" />
+              <span className="cheatsheet-card-name-mobile">{meta.name}</span>
             </div>
           ))}
         </div>

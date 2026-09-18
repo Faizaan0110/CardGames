@@ -7,6 +7,8 @@ import {
   addPlayer,
   handleDisconnect,
   reconnectPlayer,
+  removePlayerFully,
+  setAvatar,
   startGame,
   canPlay,
   playCard,
@@ -108,6 +110,59 @@ io.on("connection", (socket) => {
       socketMeta.set(socket.id, { roomCode: room.code, name: player.name });
       cb({ ok: true, code: room.code, name: player.name });
       broadcastState(room.code);
+    } catch (err) {
+      cb({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("set_avatar", ({ avatarUrl } = {}, cb) => {
+    try {
+      const meta = socketMeta.get(socket.id);
+      if (!meta) throw new Error("Not in a room");
+      const room = getRoom(meta.roomCode);
+      if (!room) throw new Error("Room not found");
+      setAvatar(room, socket.id, avatarUrl);
+      cb({ ok: true });
+      broadcastState(room.code);
+    } catch (err) {
+      cb({ ok: false, error: err.message });
+    }
+  });
+
+  // An explicit, intentional leave — distinct from a passive disconnect.
+  // Removes them for good (no resuming this seat afterward), rather than
+  // just marking them away the way a dropped connection does.
+  socket.on("leave_room", (_payload, cb) => {
+    try {
+      const meta = socketMeta.get(socket.id);
+      if (!meta) {
+        cb({ ok: true });
+        return;
+      }
+      const room = getRoom(meta.roomCode);
+      if (room) {
+        removePlayerFully(room, socket.id, { reason: "left the room" });
+        broadcastState(room.code);
+      }
+      socketMeta.delete(socket.id);
+      cb({ ok: true });
+    } catch (err) {
+      cb({ ok: false, error: err.message });
+    }
+  });
+
+  // Host-only. Works both in the lobby and mid-game — same underlying
+  // removal either way, just gated to the host and blocked from targeting
+  // themselves (they'd use leave_room for that).
+  socket.on("kick_player", ({ targetId } = {}, cb) => {
+    try {
+      const meta = socketMeta.get(socket.id);
+      if (!meta) throw new Error("Not in a room");
+      const room = getRoom(meta.roomCode);
+      if (!room) throw new Error("Room not found");
+      removePlayerFully(room, targetId, { requireHostId: socket.id, reason: "removed by the host" });
+      broadcastState(room.code);
+      cb({ ok: true });
     } catch (err) {
       cb({ ok: false, error: err.message });
     }
