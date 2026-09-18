@@ -9,6 +9,7 @@ import {
   reconnectPlayer,
   removePlayerFully,
   setAvatar,
+  postChatMessage,
   startGame,
   canPlay,
   playCard,
@@ -44,6 +45,8 @@ const socketMeta = new Map();
 // create_room in a loop.
 const ROOM_CREATE_COOLDOWN_MS = 3000;
 const lastCreateAt = new Map(); // socket.id -> timestamp
+const CHAT_COOLDOWN_MS = 400;
+const lastChatAt = new Map(); // socket.id -> timestamp
 const ROOM_CODE_RE = /^[A-Za-z0-9]{4}$/;
 
 function broadcastState(roomCode) {
@@ -168,6 +171,26 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("send_chat_message", ({ text } = {}, cb) => {
+    try {
+      const now = Date.now();
+      const last = lastChatAt.get(socket.id) || 0;
+      if (now - last < CHAT_COOLDOWN_MS) {
+        throw new Error("Sending messages too fast");
+      }
+      const meta = socketMeta.get(socket.id);
+      if (!meta) throw new Error("Not in a room");
+      const room = getRoom(meta.roomCode);
+      if (!room) throw new Error("Room not found");
+      postChatMessage(room, socket.id, text);
+      lastChatAt.set(socket.id, now);
+      cb({ ok: true });
+      broadcastState(room.code);
+    } catch (err) {
+      cb({ ok: false, error: err.message });
+    }
+  });
+
   socket.on("start_game", (_payload, cb) => {
     try {
       const meta = socketMeta.get(socket.id);
@@ -248,6 +271,7 @@ io.on("connection", (socket) => {
       socketMeta.delete(socket.id);
     }
     lastCreateAt.delete(socket.id);
+    lastChatAt.delete(socket.id);
     sweepEmptyRooms();
   });
 });
@@ -262,12 +286,17 @@ server.listen(PORT, () => {
 // later to actually finish the deletion once the grace period has passed.
 setInterval(sweepEmptyRooms, 10_000);
 
-// lastCreateAt only ever grows as new sockets connect; sockets that never
-// come back (rather than cleanly disconnecting) would otherwise leak here
-// forever. Periodically drop anything old enough that its cooldown is moot.
+// lastCreateAt/lastChatAt only ever grow as new sockets connect; sockets
+// that never come back (rather than cleanly disconnecting) would otherwise
+// leak here forever. Periodically drop anything old enough that its
+// cooldown is moot.
 setInterval(() => {
-  const cutoff = Date.now() - ROOM_CREATE_COOLDOWN_MS * 10;
+  const createCutoff = Date.now() - ROOM_CREATE_COOLDOWN_MS * 10;
   for (const [id, ts] of lastCreateAt.entries()) {
-    if (ts < cutoff) lastCreateAt.delete(id);
+    if (ts < createCutoff) lastCreateAt.delete(id);
+  }
+  const chatCutoff = Date.now() - CHAT_COOLDOWN_MS * 100;
+  for (const [id, ts] of lastChatAt.entries()) {
+    if (ts < chatCutoff) lastChatAt.delete(id);
   }
 }, 60_000);

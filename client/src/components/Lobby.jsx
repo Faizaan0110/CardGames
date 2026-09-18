@@ -5,6 +5,7 @@ import TopBar from "./TopBar.jsx";
 import Avatar from "./Avatar.jsx";
 import AvatarPicker from "./AvatarPicker.jsx";
 import GameRulesPanel from "./GameRulesPanel.jsx";
+import ChatPanel from "./ChatPanel.jsx";
 import Icon from "./Icon.jsx";
 
 export default function Lobby({ myId, roomCode, state, error, setError, onBack }) {
@@ -156,6 +157,8 @@ export default function Lobby({ myId, roomCode, state, error, setError, onBack }
           <button className="link-btn lobby-rules-link" onClick={() => setShowRules(true)}>
             How to play
           </button>
+
+          <ChatPanel myId={myId} state={state} />
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import Card from "./Card.jsx";
 import Avatar from "./Avatar.jsx";
 import CheatsheetPanel from "./CheatsheetPanel.jsx";
 import GameRulesPanel from "./GameRulesPanel.jsx";
+import ChatPanel from "./ChatPanel.jsx";
 import TopBar from "./TopBar.jsx";
 import Icon from "./Icon.jsx";
 import { CARD_META } from "../cardData.js";
@@ -348,6 +349,8 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
           <button className="cheatsheet-trigger" onClick={() => setShowCheatsheet(true)}>
             <Icon name="book" size={14} /> View Cheatsheet
           </button>
+
+          <ChatPanel myId={myId} state={state} />
         </aside>
       </div>
 

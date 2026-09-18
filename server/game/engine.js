@@ -32,7 +32,21 @@ export function createRoomState(code, hostId) {
     matchEnded: false,
     matchWinnerIds: [],
     playHistory: [], // { playerId, playerName, value }[] in play order, this round
+    chat: [], // { playerId, playerName, text, ts }[] - lasts the whole room, not reset per round
   };
+}
+
+const MAX_CHAT_LENGTH = 300;
+
+export function postChatMessage(room, playerId, text) {
+  const player = room.players.find((p) => p.id === playerId && !p.removed);
+  if (!player) throw new Error("Not in this room");
+  if (typeof text !== "string") throw new Error("Message is required");
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Message is required");
+  if (trimmed.length > MAX_CHAT_LENGTH) throw new Error(`Messages must be ${MAX_CHAT_LENGTH} characters or fewer`);
+  room.chat.push({ playerId, playerName: player.name, text: trimmed, ts: Date.now() });
+  if (room.chat.length > 100) room.chat.shift();
 }
 
 // First to this many tokens of affection wins the match.
@@ -564,6 +578,7 @@ export function getPublicState(room) {
     matchEnded: room.matchEnded,
     matchWinnerIds: room.matchWinnerIds,
     playHistory: room.playHistory.slice(-10),
+    chat: room.chat.slice(-100),
     players: room.players
       .filter((p) => !p.removed)
       .map((p) => ({
