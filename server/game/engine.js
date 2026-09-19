@@ -32,20 +32,22 @@ export function createRoomState(code, hostId) {
     matchEnded: false,
     matchWinnerIds: [],
     playHistory: [], // { playerId, playerName, value }[] in play order, this round
+    lastAction: null, // { cardValue, playerId, playerName, message } - most recent play, cleared each new round
     chat: [], // { playerId, playerName, text, ts }[] - lasts the whole room, not reset per round
+    spectators: [], // { id, sessionToken, name, avatarUrl, connected } - joined while a match was already in progress
   };
 }
 
 const MAX_CHAT_LENGTH = 300;
 
 export function postChatMessage(room, playerId, text) {
-  const player = room.players.find((p) => p.id === playerId && !p.removed);
-  if (!player) throw new Error("Not in this room");
+  const sender = room.players.find((p) => p.id === playerId && !p.removed) || room.spectators.find((s) => s.id === playerId);
+  if (!sender) throw new Error("Not in this room");
   if (typeof text !== "string") throw new Error("Message is required");
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Message is required");
   if (trimmed.length > MAX_CHAT_LENGTH) throw new Error(`Messages must be ${MAX_CHAT_LENGTH} characters or fewer`);
-  room.chat.push({ playerId, playerName: player.name, text: trimmed, ts: Date.now() });
+  room.chat.push({ playerId, playerName: sender.name, text: trimmed, ts: Date.now() });
   if (room.chat.length > 100) room.chat.shift();
 }
 
@@ -64,7 +66,7 @@ export function addPlayer(room, id, name) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Name is required");
   if (trimmed.length > MAX_NAME_LENGTH) throw new Error(`Name must be ${MAX_NAME_LENGTH} characters or fewer`);
-  if (room.players.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
+  if (nameTaken(room, trimmed)) {
     throw new Error("That name is already taken in this room");
   }
   const sessionToken = nanoid(SESSION_TOKEN_LENGTH);
@@ -81,6 +83,60 @@ export function addPlayer(room, id, name) {
   if (!(id in room.tokens)) room.tokens[id] = 0;
 }
 
+const MAX_SPECTATORS = 20;
+
+function nameTaken(room, name) {
+  const lower = name.toLowerCase();
+  return room.players.some((p) => p.name.toLowerCase() === lower) || room.spectators.some((s) => s.name.toLowerCase() === lower);
+}
+
+// Joining a room whose match is already underway makes you a spectator
+// instead of a player — you can watch (deck count, discard, chat, everything
+// public) but never see anyone's hand. The host can add you as a real player
+// once the whole match finishes (see promoteSpectator), not mid-match, since
+// there's no clean way to deal a new player into a round in progress.
+export function addSpectator(room, id, name) {
+  if (typeof name !== "string") throw new Error("Name is required");
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Name is required");
+  if (trimmed.length > MAX_NAME_LENGTH) throw new Error(`Name must be ${MAX_NAME_LENGTH} characters or fewer`);
+  if (nameTaken(room, trimmed)) throw new Error("That name is already taken in this room");
+  if (room.spectators.length >= MAX_SPECTATORS) throw new Error("Too many spectators right now");
+
+  const sessionToken = nanoid(SESSION_TOKEN_LENGTH);
+  const spectator = { id, sessionToken, name: trimmed, avatarUrl: null, connected: true };
+  room.spectators.push(spectator);
+  return spectator;
+}
+
+// Host-only, and only once the current match has fully concluded — moves a
+// spectator into an actual player seat for the next match. Their session
+// token carries over unchanged, so their browser's existing resume flow
+// keeps working without needing to rejoin.
+export function promoteSpectator(room, requesterId, spectatorId) {
+  if (room.hostId !== requesterId) throw new Error("Only the host can add spectators to the game");
+  if (!room.matchEnded) throw new Error("Can only add spectators once the match has finished");
+  if (room.players.length >= MAX_PLAYERS) throw new Error("Room is full (max 4)");
+
+  const idx = room.spectators.findIndex((s) => s.id === spectatorId);
+  if (idx === -1) throw new Error("Spectator not found");
+  const spectator = room.spectators[idx];
+  room.spectators.splice(idx, 1);
+
+  room.players.push({
+    id: spectator.id,
+    sessionToken: spectator.sessionToken,
+    name: spectator.name,
+    hand: [],
+    alive: true,
+    protected: false,
+    connected: spectator.connected,
+    avatarUrl: spectator.avatarUrl,
+  });
+  room.tokens[spectator.id] = 0;
+  return spectator;
+}
+
 // A custom profile picture, sent as a small resized data URL (the client
 // crops/resizes it before sending — this just double-checks server-side
 // rather than trusting that happened). Lightweight and in-memory like
@@ -89,12 +145,12 @@ export function addPlayer(room, id, name) {
 const MAX_AVATAR_DATA_URL_LENGTH = 120_000; // generous for a small square JPEG, not for a dumped multi-MB photo
 
 export function setAvatar(room, playerId, avatarUrl) {
-  const player = room.players.find((p) => p.id === playerId);
-  if (!player) throw new Error("Not in this room");
+  const target = room.players.find((p) => p.id === playerId) || room.spectators.find((s) => s.id === playerId);
+  if (!target) throw new Error("Not in this room");
 
   if (avatarUrl === null || avatarUrl === undefined || avatarUrl === "") {
-    player.avatarUrl = null;
-    return player;
+    target.avatarUrl = null;
+    return target;
   }
   if (typeof avatarUrl !== "string" || !avatarUrl.startsWith("data:image/")) {
     throw new Error("That doesn't look like a valid image.");
@@ -102,8 +158,8 @@ export function setAvatar(room, playerId, avatarUrl) {
   if (avatarUrl.length > MAX_AVATAR_DATA_URL_LENGTH) {
     throw new Error("Image is too large — try a smaller photo.");
   }
-  player.avatarUrl = avatarUrl;
-  return player;
+  target.avatarUrl = avatarUrl;
+  return target;
 }
 
 // Handles what happens when a socket disconnects: marking them away and
@@ -113,19 +169,24 @@ export function setAvatar(room, playerId, avatarUrl) {
 // or the player's own "leave" actually removes someone from the round.
 export function handleDisconnect(room, playerId) {
   const player = room.players.find((p) => p.id === playerId);
-  if (!player) return;
-  player.connected = false;
+  if (player) {
+    player.connected = false;
 
-  if (room.hostId === playerId) {
-    const nextHost = room.players.find((p) => p.connected && !p.removed);
-    if (nextHost) {
-      room.hostId = nextHost.id;
-      log(room, `${nextHost.name} is now the host.`);
+    if (room.hostId === playerId) {
+      const nextHost = room.players.find((p) => p.connected && !p.removed);
+      if (nextHost) {
+        room.hostId = nextHost.id;
+        log(room, `${nextHost.name} is now the host.`);
+      }
     }
+    // No turn change here — if it's currently their turn, their hand is
+    // untouched and waiting; if it becomes their turn later, advanceTurn
+    // (below) will land on them and simply not start it until they're back.
+    return;
   }
-  // No turn change here — if it's currently their turn, their hand is
-  // untouched and waiting; if it becomes their turn later, advanceTurn
-  // (below) will land on them and simply not start it until they're back.
+
+  const spectator = room.spectators.find((s) => s.id === playerId);
+  if (spectator) spectator.connected = false;
 }
 
 // Fully removes a player — used for both an explicit "leave" and a host
@@ -217,6 +278,17 @@ export function reconnectPlayer(room, token, newSocketId) {
   return player;
 }
 
+// Simpler than reconnectPlayer since a spectator has no hand, turn, discard
+// pile, or token count to migrate — just their identity and connection.
+export function reconnectSpectator(room, token, newSocketId) {
+  if (!token) return null;
+  const spectator = room.spectators.find((s) => s.sessionToken === token);
+  if (!spectator) return null;
+  spectator.id = newSocketId;
+  spectator.connected = true;
+  return spectator;
+}
+
 function log(room, msg) {
   room.log.push(msg);
   if (room.log.length > 200) room.log.shift();
@@ -234,6 +306,7 @@ export function startGame(room) {
   room.log = [];
   room.discard = {};
   room.playHistory = [];
+  room.lastAction = null;
   for (const p of room.players) {
     p.hand = [];
     p.alive = true;
@@ -447,6 +520,7 @@ export function playCard(room, playerId, action) {
   }
 
   log(room, resultMsg);
+  room.lastAction = { cardValue, playerId: player.id, playerName: player.name, message: resultMsg };
   return {
     message: resultMsg,
     guard: cardValue === GUARD && target ? { targetId: target.id, guessValue } : null,
@@ -578,6 +652,8 @@ export function getPublicState(room) {
     matchEnded: room.matchEnded,
     matchWinnerIds: room.matchWinnerIds,
     playHistory: room.playHistory.slice(-10),
+    lastAction: room.lastAction,
+    spectators: room.spectators.map((s) => ({ id: s.id, name: s.name, avatarUrl: s.avatarUrl, connected: s.connected })),
     chat: room.chat.slice(-100),
     players: room.players
       .filter((p) => !p.removed)

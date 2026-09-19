@@ -5,8 +5,11 @@ import { Server } from "socket.io";
 import { createRoom, getRoom, sweepEmptyRooms } from "./game/rooms.js";
 import {
   addPlayer,
+  addSpectator,
+  promoteSpectator,
   handleDisconnect,
   reconnectPlayer,
+  reconnectSpectator,
   removePlayerFully,
   setAvatar,
   postChatMessage,
@@ -74,7 +77,7 @@ io.on("connection", (socket) => {
       const player = room.players.find((p) => p.id === socket.id);
       socket.join(room.code);
       socketMeta.set(socket.id, { roomCode: room.code, name: name.trim() });
-      cb({ ok: true, code: room.code, sessionToken: player.sessionToken });
+      cb({ ok: true, code: room.code, sessionToken: player.sessionToken, role: "player" });
       broadcastState(room.code);
     } catch (err) {
       cb({ ok: false, error: err.message });
@@ -87,11 +90,23 @@ io.on("connection", (socket) => {
       if (typeof code !== "string" || !ROOM_CODE_RE.test(code)) throw new Error("Invalid room code");
       const room = getRoom(code);
       if (!room) throw new Error("Room not found");
+
+      if (room.started) {
+        // Match already in progress - join as a spectator instead. The host
+        // can add them as a real player once the whole match finishes.
+        const spectator = addSpectator(room, socket.id, name.trim());
+        socket.join(room.code);
+        socketMeta.set(socket.id, { roomCode: room.code, name: name.trim() });
+        cb({ ok: true, code: room.code, sessionToken: spectator.sessionToken, role: "spectator" });
+        broadcastState(room.code);
+        return;
+      }
+
       addPlayer(room, socket.id, name.trim());
       const player = room.players.find((p) => p.id === socket.id);
       socket.join(room.code);
       socketMeta.set(socket.id, { roomCode: room.code, name: name.trim() });
-      cb({ ok: true, code: room.code, sessionToken: player.sessionToken });
+      cb({ ok: true, code: room.code, sessionToken: player.sessionToken, role: "player" });
       broadcastState(room.code);
     } catch (err) {
       cb({ ok: false, error: err.message });
@@ -100,19 +115,36 @@ io.on("connection", (socket) => {
 
   // A returning browser presents the token it was given on join, plus the
   // room code it remembers — never a display name — to reclaim its seat
-  // under a fresh socket.id (refresh, brief network drop, etc).
+  // under a fresh socket.id (refresh, brief network drop, etc). Tries a
+  // player seat first, then a spectator slot, since the client can't know
+  // in advance which one they were (and they might have been promoted from
+  // spectator to player since their last visit).
   socket.on("resume_session", ({ token, code } = {}, cb) => {
     try {
       if (!token || typeof token !== "string") throw new Error("Nothing to resume");
       if (typeof code !== "string" || !ROOM_CODE_RE.test(code)) throw new Error("Invalid room code");
       const room = getRoom(code);
       if (!room) throw new Error("Room not found");
+
       const player = reconnectPlayer(room, token, socket.id);
-      if (!player) throw new Error("Session not found");
-      socket.join(room.code);
-      socketMeta.set(socket.id, { roomCode: room.code, name: player.name });
-      cb({ ok: true, code: room.code, name: player.name });
-      broadcastState(room.code);
+      if (player) {
+        socket.join(room.code);
+        socketMeta.set(socket.id, { roomCode: room.code, name: player.name });
+        cb({ ok: true, code: room.code, name: player.name, role: "player" });
+        broadcastState(room.code);
+        return;
+      }
+
+      const spectator = reconnectSpectator(room, token, socket.id);
+      if (spectator) {
+        socket.join(room.code);
+        socketMeta.set(socket.id, { roomCode: room.code, name: spectator.name });
+        cb({ ok: true, code: room.code, name: spectator.name, role: "spectator" });
+        broadcastState(room.code);
+        return;
+      }
+
+      throw new Error("Session not found");
     } catch (err) {
       cb({ ok: false, error: err.message });
     }
@@ -164,6 +196,20 @@ io.on("connection", (socket) => {
       const room = getRoom(meta.roomCode);
       if (!room) throw new Error("Room not found");
       removePlayerFully(room, targetId, { requireHostId: socket.id, reason: "removed by the host" });
+      broadcastState(room.code);
+      cb({ ok: true });
+    } catch (err) {
+      cb({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("promote_spectator", ({ spectatorId } = {}, cb) => {
+    try {
+      const meta = socketMeta.get(socket.id);
+      if (!meta) throw new Error("Not in a room");
+      const room = getRoom(meta.roomCode);
+      if (!room) throw new Error("Room not found");
+      promoteSpectator(room, socket.id, spectatorId);
       broadcastState(room.code);
       cb({ ok: true });
     } catch (err) {

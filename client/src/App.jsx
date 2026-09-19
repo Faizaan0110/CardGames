@@ -5,6 +5,7 @@ import Hub from "./components/Hub.jsx";
 import JoinScreen from "./components/JoinScreen.jsx";
 import Lobby from "./components/Lobby.jsx";
 import GameTable from "./components/GameTable.jsx";
+import SpectatorView from "./components/SpectatorView.jsx";
 
 export default function App() {
   const [view, setView] = useState("hub"); // 'hub' | 'join'
@@ -12,6 +13,7 @@ export default function App() {
 
   const [myId, setMyId] = useState(socket.id || null);
   const [roomCode, setRoomCode] = useState(null);
+  const [role, setRole] = useState("player"); // 'player' | 'spectator'
   const [publicState, setPublicState] = useState(null);
   const [myHand, setMyHand] = useState([]);
   const [reveal, setReveal] = useState(null);
@@ -34,12 +36,9 @@ export default function App() {
     }
     function onReveal(info) {
       setReveal(info);
-      // Priest is a quick glance, fine to auto-clear. Baron is a duel result
-      // the player should be able to actually read - it clears when they
-      // dismiss it themselves (see GameTable's reveal modal).
-      if (info.type !== "baron") {
-        setTimeout(() => setReveal(null), 6000);
-      }
+      // Every reveal type now requires the player to actually dismiss it -
+      // a duel result or a peeked hand is worth reading properly, not
+      // flashing past on a timer (see GameTable's reveal modals).
     }
 
     async function tryResume() {
@@ -51,6 +50,7 @@ export default function App() {
       try {
         const res = await emitAsync("resume_session", saved);
         setRoomCode(res.code);
+        setRole(res.role || "player");
         setError(null);
       } catch {
         // Session no longer valid (room gone, or it never existed) — stop
@@ -89,9 +89,10 @@ export default function App() {
     setView("join");
   }
 
-  function handleJoined(code, sessionToken) {
+  function handleJoined(code, sessionToken, joinedRole) {
     if (sessionToken) saveSession(sessionToken, code);
     setRoomCode(code);
+    setRole(joinedRole || "player");
     setError(null);
   }
 
@@ -131,6 +132,17 @@ export default function App() {
       );
     }
     return <Hub onPlay={handlePlayFromHub} onJoinCode={handleJoinCodeFromHub} />;
+  }
+
+  // Once we have live state, trust it over the role captured at join/resume
+  // time — that's what makes a host's promotion actually take effect on the
+  // promoted person's own browser without needing them to refresh: the next
+  // broadcast shows them in `players` instead of `spectators`, and this
+  // recomputes accordingly.
+  const isSpectating = publicState.spectators?.some((s) => s.id === myId) ?? role === "spectator";
+
+  if (isSpectating) {
+    return <SpectatorView myId={myId} roomCode={roomCode} state={publicState} onBack={handleLeave} />;
   }
 
   if (!publicState.started) {

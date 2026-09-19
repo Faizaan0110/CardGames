@@ -45,7 +45,7 @@ export function deleteRoom(code) {
 export function sweepEmptyRooms() {
   const now = Date.now();
   for (const [code, room] of rooms.entries()) {
-    const anyoneConnected = room.players.some((p) => p.connected);
+    const anyoneConnected = room.players.some((p) => p.connected) || room.spectators.some((s) => s.connected);
     if (anyoneConnected) {
       room._emptySince = null;
       continue;

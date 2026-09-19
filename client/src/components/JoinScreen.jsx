@@ -40,7 +40,7 @@ export default function JoinScreen({ onJoined, onBack, initialMode = "create", i
           // ignore - they can set it again from the lobby
         }
       }
-      onJoined(res.code, res.sessionToken);
+      onJoined(res.code, res.sessionToken, res.role);
     } catch (err) {
       setError(err.message);
     } finally {

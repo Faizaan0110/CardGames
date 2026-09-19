@@ -8,6 +8,7 @@ import ChatPanel from "./ChatPanel.jsx";
 import TopBar from "./TopBar.jsx";
 import Icon from "./Icon.jsx";
 import { CARD_META } from "../cardData.js";
+import { useModalA11y } from "../useModalA11y.js";
 
 const NEEDS_TARGET = new Set([1, 2, 3, 6]);
 const PRINCE = 5;
@@ -21,7 +22,6 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
   const [busy, setBusy] = useState(false);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
   const [showRules, setShowRules] = useState(false);
-  const [logExpanded, setLogExpanded] = useState(false);
 
   const isMyTurn = state.turnPlayerId === myId && !state.ended;
   const isHost = state.hostId === myId;
@@ -110,7 +110,14 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
     }
   }
 
-  const visibleLog = logExpanded ? state.log.slice(-14) : state.log.slice(-3);
+  async function handlePromote(spectatorId) {
+    try {
+      await emitAsync("promote_spectator", { spectatorId });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   const selectedMeta = selectedCard !== null ? CARD_META[selectedCard] : null;
 
   return (
@@ -177,6 +184,20 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
                   {state.matchEnded ? "Start a new match" : "Play next round"}
                 </button>
               )}
+              {isHost && state.matchEnded && state.spectators?.length > 0 && (
+                <div className="spectator-promote-list">
+                  <h4>Add a spectator to the game</h4>
+                  {state.spectators.map((s) => (
+                    <div key={s.id} className="spectator-promote-row">
+                      <Avatar name={s.name} avatarUrl={s.avatarUrl} size={22} />
+                      <span>{s.name}</span>
+                      <button className="btn" onClick={() => handlePromote(s.id)}>
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -212,19 +233,22 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
             </div>
           </section>
 
-          {reveal && reveal.type === "priest" && (
-            <div className="reveal-toast">
-              Priest reveal: {nameFor(state, reveal.targetId)} is holding {CARD_META[reveal.card]?.name}.
+          {state.lastAction && (
+            <div className="last-action-banner" key={state.round + "-" + state.deckCount + "-" + state.playHistory.length}>
+              <Card value={state.lastAction.cardValue} size="tiny" />
+              <span className="last-action-text">
+                {personalizeMessage(state.lastAction.message, state.lastAction.playerName, state.lastAction.playerId === myId)}
+              </span>
             </div>
           )}
 
-          {/* Baron reveal now renders as a modal near the end of this component, not inline here */}
+          {/* Priest and Baron reveals now render as modals near the end of this component, not inline here */}
 
           {error && <p className="error floating">{error}</p>}
 
           <section className="my-area">
             {isMyTurn && !state.ended ? (
-              <p className="turn-banner">
+              <p className="turn-banner" key={`my-turn-${state.round}-${state.deckCount}`}>
                 <Icon name="crown" size={13} /> Your turn — choose a card to play
               </p>
             ) : !state.ended ? (
@@ -312,18 +336,6 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
               </div>
             )}
           </section>
-
-          <section className="log">
-            <button className="log-header" onClick={() => setLogExpanded((e) => !e)}>
-              <span>Game Log</span>
-              <Icon name="chevron-down" size={12} className={logExpanded ? "log-chevron open" : "log-chevron"} />
-            </button>
-            <div className="log-body">
-              {visibleLog.map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
-            </div>
-          </section>
         </div>
 
         <aside className="game-sidebar">
@@ -339,6 +351,11 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
               <li>
                 <Icon name="heart" size={13} /> First to {state.favorTarget} tokens
               </li>
+              {state.spectators?.length > 0 && (
+                <li>
+                  <Icon name="users" size={13} /> {state.spectators.length} spectating
+                </li>
+              )}
             </ul>
           </div>
 
@@ -356,29 +373,54 @@ export default function GameTable({ myId, roomCode, state, hand, reveal, onDismi
 
       {showRules && <GameRulesPanel onClose={() => setShowRules(false)} />}
       {showCheatsheet && <CheatsheetPanel onClose={() => setShowCheatsheet(false)} />}
+      {reveal && reveal.type === "priest" && <PriestRevealModal reveal={reveal} state={state} onClose={onDismissReveal} />}
       {reveal && reveal.type === "baron" && <BaronRevealModal reveal={reveal} myId={myId} state={state} onClose={onDismissReveal} />}
+    </div>
+  );
+}
+
+// Shown only to the player who played Priest - stays up until they
+// dismiss it themselves, same treatment as the Baron duel below.
+function PriestRevealModal({ reveal, state, onClose }) {
+  const { panelRef, closeBtnRef } = useModalA11y(onClose);
+  const targetName = nameFor(state, reveal.targetId);
+  const meta = CARD_META[reveal.card];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-panel priest-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="priest-modal-title"
+        ref={panelRef}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="priest-modal-title" className="priest-modal-title">
+          Priest Reveal
+        </h2>
+
+        <div className="priest-reveal-content">
+          <Card value={reveal.card} size="lg" />
+          <p>
+            {targetName} is holding <strong>{meta?.name}</strong>.
+          </p>
+        </div>
+
+        <button className="btn primary" onClick={onClose} ref={closeBtnRef}>
+          OK
+        </button>
+      </div>
     </div>
   );
 }
 
 // Shown only to the two players who played/were targeted by a Baron — the
 // server only ever sends this event to those two sockets, never the room.
-// Unlike Priest's quick-glance toast, this stays up until the viewer
-// dismisses it themselves — a duel result is worth actually reading.
+// Stays up until the viewer dismisses it themselves — a duel result is
+// worth actually reading.
 function BaronRevealModal({ reveal, myId, state, onClose }) {
-  const closeBtnRef = React.useRef(null);
-
-  useEffect(() => {
-    closeBtnRef.current?.focus();
-    function onKeyDown(e) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  const { panelRef, closeBtnRef } = useModalA11y(onClose);
 
   const isA = reveal.aId === myId;
   const myCard = isA ? reveal.aCard : reveal.bCard;
@@ -394,6 +436,7 @@ function BaronRevealModal({ reveal, myId, state, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="baron-modal-title"
+        ref={panelRef}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="baron-modal-title" className="baron-modal-title">
@@ -427,4 +470,12 @@ function BaronRevealModal({ reveal, myId, state, onClose }) {
 function nameFor(state, id) {
   const p = state.players.find((p) => p.id === id);
   return p ? p.name : "someone";
+}
+
+function personalizeMessage(message, playerName, isMe) {
+  if (!isMe) return message;
+  if (message.startsWith(playerName + " ")) {
+    return "You" + message.slice(playerName.length);
+  }
+  return message;
 }
